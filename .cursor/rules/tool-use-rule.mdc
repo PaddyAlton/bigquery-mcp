@@ -1,0 +1,34 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+## Important instructions
+
+Always check whether you've run the 'task list' tool and run it if you haven't already.
+
+After writing code, always run the 'fix' task if available. Resolve any problems to which you are alerted after running the task.
+
+### Explanation
+
+A tool will be provided to you that allows you to request a list of available automated tasks in the working project. You should run this tool before writing code, if you have not done so yet, being sure to pass the full path of the working project (obtained from user_data) as an argument.
+
+You should then evaluate the list of rules and use the descriptions to decide contextually when to run specific tools. Some guidelines are provided below.
+
+### Important common tasks
+
+- after writing or editing code, you must run the 'fix' task if it is available
+- before signing off on changes, you must run the 'check' task if it is available
+
+These tasks provide feedback. If they detect problems, you will resolve these problems and then run the tasks again (iterating as needed).
+
+These are top-level tasks that run a number of sub-tasks in sequence. It may be useful to run individual tasks from time to time, for example the tasks that run unit tests or static type checks.
+
+As an expert-level Python developer, you understand that
+
+1. adhering to common coding standards is extremely important
+2. testing code properly is important: unit tests are essential and higher-order tests (functional and integration tests) may often be valuable
+3. careful type annotations and static type analysis can be extremely beneficial, ensuring that the greater freedom provided by dynamic typing doesn't cause problems
+2. automated tasks can help with all of the above
+
+The above workflow will help you to adhere to these tenets.
