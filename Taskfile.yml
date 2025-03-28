@@ -1,0 +1,65 @@
+version: '3'
+
+tasks:
+
+    format:
+        cmds:
+            - uv run ruff format src tests
+        desc: Auto-format .py files in src/
+
+    format-check:
+        cmds:
+            - uv run ruff format src tests --check
+        desc: Check that autoformatting is not required for .py files in src/
+
+    lint:
+        cmds:
+            - uv run ruff check src tests --fix
+        desc: Attempt to auto-fix .py files in src/ that fail linting
+
+    lint-check:
+        cmds:
+            - uv run ruff check src tests
+        desc: Lint .py files in src/
+
+    sql-fix:
+        cmds:
+            - uv run sqlfluff fix src/sql
+        desc: Fix .sql files in src/sql/ with SQLFluff
+
+    sql-check:
+        cmds:
+            - uv run sqlfluff lint src/sql
+        desc: Lint .sql files in src/sql/ with SQLFluff
+
+    test:
+        cmds:
+            - uv run pytest
+        desc: Run the unit tests via Pytest
+
+    test-coverage:
+        cmds:
+            - uv run pytest --cov=src --cov-report=term-missing --cov-fail-under=59
+        desc: Test coverage evaluation, failing if less than 59%
+
+    type-check:
+        cmds:
+            - uv run mypy src
+        desc: Run the Mypy static type checker against src/
+
+    fix:
+        cmds:
+            - task: format
+            - task: lint
+            - task: sql-fix
+        desc: Auto-fix issues where possible
+
+    check:
+        cmds:
+            - task: format-check
+            - task: lint-check
+            - task: sql-check
+            - task: test
+            - task: test-coverage
+            - task: type-check
+        desc: Run all automated checks
