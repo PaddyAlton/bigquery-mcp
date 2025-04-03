@@ -29,6 +29,7 @@ def some_tool() -> str:
     """Do something"""
     return "Hello, world!"
 
+
 ### SOME IDEAS
 # Materialised view over the information schema;
 #   can we add search/vector indexes to this? If so maybe worth it!
