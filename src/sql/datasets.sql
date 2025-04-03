@@ -1,5 +1,7 @@
 -- datasets.sql
--- 
+-- retrieve all datasets that have descriptions,
+-- including the dataset name and description
+
 SELECT
     schema_name AS dataset,
     TRIM(option_value, '"') AS description,

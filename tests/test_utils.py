@@ -2,7 +2,7 @@
 
 import pytest
 
-from google.cloud.bigquery import Client
+from google.cloud.bigquery import Client, QueryJobConfig
 from pandas import DataFrame
 from pydantic import ValidationError
 
@@ -81,33 +81,15 @@ class TestToolbox:
         assert isinstance(toolbox.client, Client)
         assert toolbox.region == "europe-west2"
 
-    def test_get_dataset_descriptions(self, mocker):
-        """Test that Toolbox.get_dataset_descriptions works correctly"""
-        # Mock setup
-        mock_query = mocker.Mock()
-        mock_query.format.return_value = "SELECT * FROM table"
+    def test_invalid_initialization(self):
+        """Test that Toolbox initialization fails with invalid input"""
+        emsg = "Input should be"
+        with pytest.raises(ValidationError, match=emsg):
+            Toolbox(target_region="invalid")
 
-        mock_client = mocker.Mock()
-        mock_df = DataFrame({"dataset": ["test"], "description": ["test desc"]})
-        mock_client.query.return_value.to_dataframe.return_value = mock_df
-
-        # Create toolbox with mocked client
-        region = BigQueryRegion(region=RegionEnum.europe_west2)
-        mocker.patch("src.utils.Client", return_value=mock_client)
-        mocker.patch("src.utils.Query", return_value=mock_query)
-
-        toolbox = Toolbox(target_region=region)
-        result = toolbox.get_dataset_descriptions()
-
-        # Verify results
-        assert isinstance(result, DataFrame)
-        mock_query.format.assert_called_once_with(region_name="europe-west2")
-        mock_client.query.assert_called_once_with(mock_query.format.return_value)
-
-        # Check DataFrame contents
-        assert len(result) == 1
-        assert result.iloc[0]["dataset"] == "test"
-        assert result.iloc[0]["description"] == "test desc"
+        # Also test that a valid dict with invalid data is not accepted
+        with pytest.raises(ValidationError, match=emsg):
+            Toolbox(target_region={"region": "invalid"})
 
     def test_sql_injection_prevention_via_dict(self):
         """Test that SQL injection attempts via dict initialization are prevented"""
@@ -122,12 +104,75 @@ class TestToolbox:
             with pytest.raises(ValidationError):
                 Toolbox(target_region=attempt)
 
-    def test_invalid_initialization(self):
-        """Test that Toolbox initialization fails with invalid input"""
-        emsg = "Input should be"
-        with pytest.raises(ValidationError, match=emsg):
-            Toolbox(target_region="invalid")
+    def test_execute_query(self, mocker):
+        """Test that Toolbox.execute_query works correctly"""
+        # Mock setup
+        mock_client = mocker.Mock()
+        mock_df = DataFrame({"column1": ["value1"], "column2": ["value2"]})
+        mock_client.query.return_value.to_dataframe.return_value = mock_df
 
-        # Also test that a valid dict with invalid data is not accepted
-        with pytest.raises(ValidationError, match=emsg):
-            Toolbox(target_region={"region": "invalid"})
+        # Create toolbox with mocked client
+        region = BigQueryRegion(region="europe-west2")
+        mocker.patch("src.utils.Client", return_value=mock_client)
+
+        # Execute test
+        toolbox = Toolbox(target_region=region)
+        test_query = "SELECT * FROM test_table"
+        result = toolbox.execute_query(test_query)
+
+        # Verify results
+        assert isinstance(result, DataFrame)
+        mock_client.query.assert_called_once()
+
+        # Check that the query was called with correct config
+        call_args = mock_client.query.call_args
+        assert call_args[0][0] == test_query  # First positional arg is query
+        assert isinstance(call_args[1]["job_config"], QueryJobConfig)
+        assert call_args[1]["job_config"].labels == {
+            "project": "bigquery-mcp",
+            "caller": "ai-agent",
+        }
+
+        # Check DataFrame contents
+        assert len(result) == 1
+        assert result.iloc[0]["column1"] == "value1"
+        assert result.iloc[0]["column2"] == "value2"
+
+    def test_get_dataset_descriptions(self, mocker):
+        """Test that Toolbox.get_dataset_descriptions works correctly"""
+        # Mock setup
+        mock_query = mocker.Mock()
+        mock_query.format.return_value = "SELECT * FROM table"
+
+        mock_client = mocker.Mock()
+        mock_df = DataFrame({"dataset": ["test"], "description": ["test desc"]})
+        mock_client.query.return_value.to_dataframe.return_value = mock_df
+
+        # Create toolbox with mocked client
+        region = BigQueryRegion(region="europe-west2")
+        mocker.patch("src.utils.Client", return_value=mock_client)
+        mocker.patch("src.utils.Query", return_value=mock_query)
+
+        toolbox = Toolbox(target_region=region)
+        result = toolbox.get_dataset_descriptions()
+
+        # Verify results
+        assert isinstance(result, DataFrame)
+        mock_query.format.assert_called_once_with(region_name="europe-west2")
+
+        # Check that query was called with correct arguments
+        mock_client.query.assert_called_once()
+        call_args = mock_client.query.call_args
+        assert (
+            call_args[0][0] == mock_query.format.return_value
+        )  # First positional arg is query
+        assert isinstance(call_args[1]["job_config"], QueryJobConfig)
+        assert call_args[1]["job_config"].labels == {
+            "project": "bigquery-mcp",
+            "caller": "ai-agent",
+        }
+
+        # Check DataFrame contents
+        assert len(result) == 1
+        assert result.iloc[0]["dataset"] == "test"
+        assert result.iloc[0]["description"] == "test desc"

@@ -4,7 +4,7 @@
 from enum import Enum
 from pathlib import Path
 
-from google.cloud.bigquery import Client
+from google.cloud.bigquery import Client, QueryJobConfig
 from pandas import DataFrame
 from pydantic import BaseModel, Field
 
@@ -91,6 +91,23 @@ class Toolbox(BaseModel):
         """The BigQuery region to access"""
         return self.target_region.region.value
 
+    def execute_query(self, query: str) -> DataFrame:
+        """
+        Execute a query and return the results
+
+        Inputs:
+            query - query to execute
+
+        Outputs:
+            table - data returned via the query
+
+        """
+        query_job_config = QueryJobConfig(
+            labels={"project": "bigquery-mcp", "caller": "ai-agent"},
+        )
+        table = self.client.query(query, job_config=query_job_config).to_dataframe()
+        return table
+
     def get_dataset_descriptions(self) -> DataFrame:
         """
         Return a table of datasets with their descriptions
@@ -100,5 +117,5 @@ class Toolbox(BaseModel):
 
         """
         query = Query("datasets").format(region_name=self.region)
-        dataset_descriptions = self.client.query(query).to_dataframe()
+        dataset_descriptions = self.execute_query(query)
         return dataset_descriptions
