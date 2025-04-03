@@ -1,0 +1,59 @@
+---
+description: When writing test for Python code, read these rules and follow them
+globs: 
+alwaysApply: false
+---
+## Test Principles for BigQuery MCP
+
+Abide by these rules when writing tests for Python code.
+
+### Critical rules
+
+Always run the 'fix' task after writing tests and use the 'test' task to ensure the test suite passes.
+
+When tests fail, carefully consider whether this is because the test is incorrect or because the source code needs improvement. Act accordingly.
+
+### Organization
+- Group tests by class in test classes (e.g., `TestSomeclass` for `Someclass` class)
+- Use clear, descriptive test method names that indicate what is being tested
+- Include docstrings that explain the purpose of each test
+- Keep test files organized parallel to source files
+
+### Validation Testing
+- Focus on testing behaviour, not implementation
+- Test both valid and invalid inputs
+- Test specific error types (e.g., `ValidationError` vs `TypeError`)
+- Use flexible error message matching to avoid brittle tests
+- Test all valid input formats (e.g., both direct enum values and string inputs)
+- Test edge cases and boundary conditions
+
+### Security Testing
+- Include tests to ensure code defends against potential exploits such as SQL injection
+- Document security-critical test cases with clear comments
+
+### Mocking and Fixtures
+- Use pytest-mock (`mocker` fixture) instead of unittest.mock
+- Mock external services (e.g. database clients)
+- Verify both the calls to mocked objects and their arguments
+- For complex objects (e.g. config objects) verify all relevant attributes
+- Use descriptive names for mock data that indicate its purpose
+
+### Test Coverage
+- Ensure each class method has dedicated test coverage
+- Test both successful and failure paths
+- Test property getters and computed values
+- Verify type annotations and conversions
+- Test configuration and initialization options
+
+### Maintainability
+- Keep test data minimal but meaningful
+- Avoid testing implementation details that might change
+- Make test intentions clear through assertions and comments
+- Follow the same code quality standards as production code
+- Run the 'fix' task after writing tests and 'check' before committing
+
+### Documentation
+- Include examples of proper usage in test cases
+- Document any non-obvious test setup or assertions
+- Explain the purpose of complex test scenarios
+- Note any security or validation implications 
