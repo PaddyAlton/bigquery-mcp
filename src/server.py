@@ -1,32 +1,19 @@
 # bigquery-mcp/src/server.py
 """Defines an MCP server for BigQuery that works with Cursor"""
 
-from contextlib import contextmanager
-from os import chdir
-from pathlib import Path
-
 from mcp.server.fastmcp import FastMCP
 
-
-# context manager for changing the working directory
-@contextmanager
-def working_dir(path: Path):
-    """Context manager for changing the working directory"""
-    original_path = Path.cwd()
-    chdir(path)
-    try:
-        yield
-    finally:
-        chdir(original_path)
-
+from src.utils import Toolbox
 
 # Create a named server
 server = FastMCP("bigquery", log_level="WARNING")
 
+toolbox = Toolbox(region="europe-west2")
+
 
 @server.tool()
-def some_tool() -> str:
-    """Do something"""
+def get_datasets() -> str:
+    """Get all datasets with descriptions"""
     return "Hello, world!"
 
 

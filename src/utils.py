@@ -6,7 +6,29 @@ from pathlib import Path
 
 from google.cloud.bigquery import Client, QueryJobConfig
 from pandas import DataFrame
-from pydantic import BaseModel, Field
+
+
+class RegionEnum(str, Enum):
+    """Defines accepted BigQuery regions"""
+
+    europe_west2 = "europe-west2"
+    us_east1 = "us-east1"
+
+
+class InvalidRegionError(ValueError):
+    """Raised when an invalid BigQuery region is provided"""
+
+    def __init__(self, region: str):
+        """
+        Initialize the error with a helpful message.
+
+        Inputs:
+            region - the invalid region that was provided
+
+        """
+        valid = ", ".join(r.value for r in RegionEnum)
+        message = f"Region '{region}' is not valid. Must be one of: {valid}"
+        super().__init__(message)
 
 
 class Query:
@@ -41,26 +63,7 @@ class Query:
         return self.query.format(**kwargs)
 
 
-### We are using templated SQL to access the BigQuery Information Schema
-### for a specific region. Because we cannot use a query parameter for
-### this purpose, we need to be very careful to ensure that our code can't
-### inject anything other than a valid region name into the query.
-
-
-class RegionEnum(str, Enum):
-    """Defines accepted BigQuery regions"""
-
-    europe_west2 = "europe-west2"
-    us_east1 = "us-east1"
-
-
-class BigQueryRegion(BaseModel):
-    """Validates accepted BigQuery regions"""
-
-    region: RegionEnum
-
-
-class Toolbox(BaseModel):
+class Toolbox:
     """
     A collection of tools for the BigQuery MCP Server
 
@@ -70,26 +73,28 @@ class Toolbox(BaseModel):
 
     """
 
-    target_region: BigQueryRegion
-    client: Client = Field(default_factory=Client)
-
-    model_config = {"arbitrary_types_allowed": True}
-
-    def __init__(self, target_region: BigQueryRegion):
+    def __init__(self, region: str):
         """
         Initialise the Toolbox with a BigQuery client
 
         Inputs:
-            target_region - BigQuery region to access
+            region - BigQuery region to access (e.g. "europe-west2")
+
+        Raises:
+            InvalidRegionError - if region is not a valid BigQuery region
 
         """
-        super().__init__(target_region=target_region)
+        try:
+            self._region = RegionEnum(region)
+        except ValueError as err:
+            raise InvalidRegionError(region) from err
+
         self.client = Client()
 
     @property
     def region(self) -> str:
         """The BigQuery region to access"""
-        return self.target_region.region.value
+        return self._region.value
 
     def execute_query(self, query: str) -> DataFrame:
         """

@@ -1,12 +1,13 @@
 """Tests for the utils module"""
 
+import re
+
 import pytest
 
 from google.cloud.bigquery import Client, QueryJobConfig
 from pandas import DataFrame
-from pydantic import ValidationError
 
-from src.utils import BigQueryRegion, Query, RegionEnum, Toolbox
+from src.utils import InvalidRegionError, Query, Toolbox
 
 
 class TestQuery:
@@ -32,22 +33,19 @@ class TestQuery:
         mock_open.assert_called_once()
 
 
-class TestBigQueryRegion:
-    """Tests for the BigQueryRegion class"""
+class TestToolbox:
+    """Tests for the Toolbox class"""
 
-    def test_validation(self):
-        """Test that BigQueryRegion validates regions correctly"""
-        # Valid region string should be converted to enum
-        region = BigQueryRegion(region="europe-west2")
-        assert region.region == RegionEnum.europe_west2
+    def test_initialization(self):
+        """Test that Toolbox can be initialized correctly"""
+        toolbox = Toolbox(region="europe-west2")
+        assert isinstance(toolbox.client, Client)
+        assert toolbox.region == "europe-west2"
 
-        # Enum value should also work
-        region = BigQueryRegion(region=RegionEnum.europe_west2)
-        assert region.region == RegionEnum.europe_west2
-
-        # Invalid region should fail with a validation error
-        with pytest.raises(ValidationError, match="Input should be"):
-            BigQueryRegion(region="invalid-region")
+    def test_invalid_initialization(self):
+        """Test that Toolbox initialization fails with invalid input"""
+        with pytest.raises(InvalidRegionError, match="Region 'invalid' is not valid"):
+            Toolbox(region="invalid")
 
     def test_sql_injection_prevention(self):
         """Test that SQL injection attempts are prevented"""
@@ -59,50 +57,9 @@ class TestBigQueryRegion:
             "europe-west2`",
         ]
         for attempt in injection_attempts:
-            with pytest.raises(ValidationError):
-                BigQueryRegion(region=attempt)
-
-
-class TestToolbox:
-    """Tests for the Toolbox class"""
-
-    def test_initialization(self):
-        """Test that Toolbox can be initialized correctly"""
-        region = BigQueryRegion(region="europe-west2")
-        toolbox = Toolbox(target_region=region)
-
-        assert isinstance(toolbox.client, Client)
-        assert toolbox.region == "europe-west2"
-
-    def test_dict_initialization(self):
-        """Test that Toolbox can be initialized with a dict"""
-        toolbox = Toolbox(target_region={"region": "europe-west2"})
-
-        assert isinstance(toolbox.client, Client)
-        assert toolbox.region == "europe-west2"
-
-    def test_invalid_initialization(self):
-        """Test that Toolbox initialization fails with invalid input"""
-        emsg = "Input should be"
-        with pytest.raises(ValidationError, match=emsg):
-            Toolbox(target_region="invalid")
-
-        # Also test that a valid dict with invalid data is not accepted
-        with pytest.raises(ValidationError, match=emsg):
-            Toolbox(target_region={"region": "invalid"})
-
-    def test_sql_injection_prevention_via_dict(self):
-        """Test that SQL injection attempts via dict initialization are prevented"""
-        injection_attempts = [
-            {"region": "europe-west2; DROP TABLE users;--"},
-            {"region": "europe-west2' UNION SELECT * FROM secrets;--"},
-            {"region": "europe-west2`) AS t WHERE 1=1;--"},
-            {"region": "`europe-west2"},
-            {"region": "europe-west2`"},
-        ]
-        for attempt in injection_attempts:
-            with pytest.raises(ValidationError):
-                Toolbox(target_region=attempt)
+            pattern = re.escape(f"Region '{attempt}' is not valid")
+            with pytest.raises(InvalidRegionError, match=pattern):
+                Toolbox(region=attempt)
 
     def test_execute_query(self, mocker):
         """Test that Toolbox.execute_query works correctly"""
@@ -112,11 +69,10 @@ class TestToolbox:
         mock_client.query.return_value.to_dataframe.return_value = mock_df
 
         # Create toolbox with mocked client
-        region = BigQueryRegion(region="europe-west2")
         mocker.patch("src.utils.Client", return_value=mock_client)
 
         # Execute test
-        toolbox = Toolbox(target_region=region)
+        toolbox = Toolbox(region="europe-west2")
         test_query = "SELECT * FROM test_table"
         result = toolbox.execute_query(test_query)
 
@@ -149,11 +105,10 @@ class TestToolbox:
         mock_client.query.return_value.to_dataframe.return_value = mock_df
 
         # Create toolbox with mocked client
-        region = BigQueryRegion(region="europe-west2")
         mocker.patch("src.utils.Client", return_value=mock_client)
         mocker.patch("src.utils.Query", return_value=mock_query)
 
-        toolbox = Toolbox(target_region=region)
+        toolbox = Toolbox(region="europe-west2")
         result = toolbox.get_dataset_descriptions()
 
         # Verify results
