@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from google.cloud.bigquery import Client, QueryJobConfig
+from google.cloud.bigquery import Client, QueryJobConfig, SchemaField
 from pandas import DataFrame
 
 from src.utils import InvalidRegionError, Query, Toolbox
@@ -97,37 +97,142 @@ class TestToolbox:
     def test_get_dataset_descriptions(self, mocker):
         """Test that Toolbox.get_dataset_descriptions works correctly"""
         # Mock setup
-        mock_query = mocker.Mock()
-        mock_query.format.return_value = "SELECT * FROM table"
+        mock_dataset = mocker.Mock()
+        mock_dataset.dataset_id = "test"
+        mock_dataset.description = "test desc"
+        mock_dataset.location = "europe-west2"
 
         mock_client = mocker.Mock()
-        mock_df = DataFrame({"dataset": ["test"], "description": ["test desc"]})
-        mock_client.query.return_value.to_dataframe.return_value = mock_df
+        mock_client.list_datasets.return_value = [mock_dataset]
+        mock_client.get_dataset.return_value = mock_dataset
 
         # Create toolbox with mocked client
         mocker.patch("src.utils.Client", return_value=mock_client)
-        mocker.patch("src.utils.Query", return_value=mock_query)
 
         toolbox = Toolbox(region="europe-west2")
         result = toolbox.get_dataset_descriptions()
 
         # Verify results
         assert isinstance(result, DataFrame)
-        mock_query.format.assert_called_once_with(region_name="europe-west2")
-
-        # Check that query was called with correct arguments
-        mock_client.query.assert_called_once()
-        call_args = mock_client.query.call_args
-        assert (
-            call_args[0][0] == mock_query.format.return_value
-        )  # First positional arg is query
-        assert isinstance(call_args[1]["job_config"], QueryJobConfig)
-        assert call_args[1]["job_config"].labels == {
-            "project": "bigquery-mcp",
-            "caller": "ai-agent",
-        }
+        mock_client.list_datasets.assert_called_once()
 
         # Check DataFrame contents
         assert len(result) == 1
         assert result.iloc[0]["dataset"] == "test"
         assert result.iloc[0]["description"] == "test desc"
+        assert result.iloc[0]["region"] == "europe-west2"
+
+    def test_process_schema_field_flat(self):
+        """Test processing of a flat SchemaField (no nesting)"""
+        # Create a mock SchemaField with no nesting
+        field = SchemaField(
+            name="simple_field",
+            field_type="STRING",
+            description="A simple field",
+            mode="NULLABLE",
+        )
+
+        # Process the field
+        result = Toolbox._process_schema_field(field)
+
+        # Verify results
+        assert len(result) == 1
+        assert result[0]["field_path"] == "simple_field"
+        assert result[0]["description"] == "A simple field"
+        assert result[0]["data_type"] == "STRING"
+
+    def test_process_schema_field_nested(self):
+        """Test processing of nested SchemaFields"""
+        # Create nested fields structure
+        child_field = SchemaField(
+            name="child",
+            field_type="STRING",
+            description="A child field",
+            mode="NULLABLE",
+        )
+
+        parent_field = SchemaField(
+            name="parent",
+            field_type="RECORD",
+            description="A parent field",
+            mode="NULLABLE",
+            fields=[child_field],
+        )
+
+        grandparent_field = SchemaField(
+            name="grandparent",
+            field_type="RECORD",
+            description="A grandparent field",
+            mode="NULLABLE",
+            fields=[parent_field],
+        )
+
+        # Process the field
+        result = Toolbox._process_schema_field(grandparent_field)
+
+        # Verify results
+        assert len(result) == 3
+
+        # Check each level exists with correct naming
+        field_paths = [r["field_path"] for r in result]
+        assert "grandparent" in field_paths
+        assert "grandparent.parent" in field_paths
+        assert "grandparent.parent.child" in field_paths
+
+        # Check descriptions are preserved
+        descriptions = {r["field_path"]: r["description"] for r in result}
+        assert descriptions["grandparent"] == "A grandparent field"
+        assert descriptions["grandparent.parent"] == "A parent field"
+        assert descriptions["grandparent.parent.child"] == "A child field"
+
+        # Check types are preserved
+        types = {r["field_path"]: r["data_type"] for r in result}
+        assert types["grandparent"] == "RECORD"
+        assert types["grandparent.parent"] == "RECORD"
+        assert types["grandparent.parent.child"] == "STRING"
+
+    def test_get_column_descriptions_with_nesting(self, mocker):
+        """Test that get_column_descriptions handles nested fields correctly"""
+        # Create nested schema
+        child = SchemaField("child", "STRING", description="Child description")
+        parent = SchemaField(
+            "parent", "RECORD", description="Parent description", fields=[child]
+        )
+        top_level = SchemaField("top", "STRING", description="Top description")
+
+        # Mock the BigQuery table
+        mock_table = mocker.Mock()
+        mock_table.schema = [top_level, parent]
+
+        # Mock the client and its methods
+        mock_client = mocker.Mock()
+        mock_client.get_dataset.return_value.table.return_value = "table_ref"
+        mock_client.get_table.return_value = mock_table
+
+        # Create toolbox with mocked client
+        mocker.patch("src.utils.Client", return_value=mock_client)
+        toolbox = Toolbox(region="europe-west2")
+
+        # Get column descriptions
+        result = toolbox.get_column_descriptions("dataset", "table")
+
+        # Verify results
+        assert len(result) == 3  # Should have 3 fields with descriptions
+
+        # Convert to dict for easier testing
+        result_dict = {row["field_path"]: row for _, row in result.iterrows()}
+
+        # Check top level field
+        assert "top" in result_dict
+        assert result_dict["top"]["description"] == "Top description"
+        assert result_dict["top"]["data_type"] == "STRING"
+
+        # Check parent field
+        assert "parent" in result_dict
+        assert result_dict["parent"]["description"] == "Parent description"
+        assert result_dict["parent"]["data_type"] == "RECORD"
+
+        # Check child field
+        assert "parent.child" in result_dict
+        assert result_dict["parent.child"]["description"] == "Child description"
+        assert result_dict["parent.child"]["data_type"] == "STRING"
