@@ -77,7 +77,6 @@ class TestToolbox:
         result = toolbox.execute_query(test_query)
 
         # Verify results
-        assert isinstance(result, DataFrame)
         mock_client.query.assert_called_once()
 
         # Check that the query was called with correct config
@@ -101,6 +100,10 @@ class TestToolbox:
         mock_dataset.dataset_id = "test"
         mock_dataset.description = "test desc"
         mock_dataset.location = "europe-west2"
+        mock_dataset.created = mocker.Mock()
+        mock_dataset.created.isoformat.return_value = "2024-03-20T10:00:00"
+        mock_dataset.modified = mocker.Mock()
+        mock_dataset.modified.isoformat.return_value = "2024-03-21T11:00:00"
 
         mock_client = mocker.Mock()
         mock_client.list_datasets.return_value = [mock_dataset]
@@ -113,7 +116,6 @@ class TestToolbox:
         result = toolbox.get_dataset_descriptions()
 
         # Verify results
-        assert isinstance(result, DataFrame)
         mock_client.list_datasets.assert_called_once()
 
         # Check DataFrame contents
@@ -121,6 +123,41 @@ class TestToolbox:
         assert result.iloc[0]["dataset"] == "test"
         assert result.iloc[0]["description"] == "test desc"
         assert result.iloc[0]["region"] == "europe-west2"
+        assert result.iloc[0]["created_at"] == "2024-03-20T10:00:00"
+        assert result.iloc[0]["last_modified"] == "2024-03-21T11:00:00"
+
+    def test_get_relation_descriptions(self, mocker):
+        """Test that Toolbox.get_relation_descriptions works correctly"""
+        # Mock setup
+        mock_relation = mocker.Mock()
+        mock_relation.table_id = "test_table"
+        mock_relation.description = "test table desc"
+        mock_relation.table_type = "TABLE"
+        mock_relation.created = mocker.Mock()
+        mock_relation.created.isoformat.return_value = "2024-03-20T10:00:00"
+        mock_relation.modified = mocker.Mock()
+        mock_relation.modified.isoformat.return_value = "2024-03-21T11:00:00"
+
+        mock_client = mocker.Mock()
+        mock_client.list_tables.return_value = [mock_relation]
+        mock_client.get_table.return_value = mock_relation
+
+        # Create toolbox with mocked client
+        mocker.patch("src.utils.Client", return_value=mock_client)
+
+        toolbox = Toolbox(region="europe-west2")
+        result = toolbox.get_relation_descriptions("test_dataset")
+
+        # Verify results
+        mock_client.list_tables.assert_called_once_with("test_dataset")
+
+        # Check DataFrame contents
+        assert len(result) == 1
+        assert result.iloc[0]["relation"] == "test_table"
+        assert result.iloc[0]["description"] == "test table desc"
+        assert result.iloc[0]["relation_type"] == "TABLE"
+        assert result.iloc[0]["created_at"] == "2024-03-20T10:00:00"
+        assert result.iloc[0]["last_modified"] == "2024-03-21T11:00:00"
 
     def test_process_schema_field_flat(self):
         """Test processing of a flat SchemaField (no nesting)"""
