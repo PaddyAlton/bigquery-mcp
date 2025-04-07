@@ -5,9 +5,7 @@ alwaysApply: true
 ---
 ## Important instructions
 
-Always begin your first response with "Rules Acknowledged!"
-
-Always check whether you've run the 'task list' tool and run it if you haven't already.
+Always check whether you've run the 'task list' tool. Run it if you haven't already. Explain how knowing the list of available tasks will affect your actions later in the session.
 
 After writing code, always run the 'fix' task if available. Resolve any problems to which you are alerted after running the task.
 

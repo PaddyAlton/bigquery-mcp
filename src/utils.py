@@ -5,7 +5,7 @@ from enum import Enum
 from pathlib import Path
 
 from google.cloud.bigquery import Client, QueryJobConfig, SchemaField
-from pandas import DataFrame
+from pandas import DataFrame, Series
 
 
 class RegionEnum(str, Enum):
@@ -96,23 +96,6 @@ class Toolbox:
         """The BigQuery region to access"""
         return self._region.value
 
-    def execute_query(self, query: str) -> DataFrame:
-        """
-        Execute a query and return the results
-
-        Inputs:
-            query - query to execute
-
-        Outputs:
-            table - data returned via the query
-
-        """
-        query_job_config = QueryJobConfig(
-            labels={"project": "bigquery-mcp", "caller": "ai-agent"},
-        )
-        table = self.client.query(query, job_config=query_job_config).to_dataframe()
-        return table
-
     def get_dataset_descriptions(self) -> DataFrame:
         """
         Return a datasets with their descriptions
@@ -129,6 +112,8 @@ class Toolbox:
                     "dataset": ds.dataset_id,
                     "description": ds.description,
                     "region": ds.location,
+                    "created_at": ds.created.isoformat(),
+                    "last_modified": ds.modified.isoformat(),
                 }
                 for ds in ds_refs
                 if ds.description is not None
@@ -158,29 +143,14 @@ class Toolbox:
                     "relation": relation.table_id,
                     "description": relation.description,
                     "relation_type": relation.table_type,
+                    "created_at": relation.created.isoformat(),
+                    "last_modified": relation.modified.isoformat(),
                 }
                 for relation in relations
                 if relation.description is not None
             ]
         )
         return relation_descriptions
-
-    def get_jobs(self) -> DataFrame:
-        """Return jobs"""
-        jobs = self.client.list_jobs()  # lots of search params available
-        first_job = next(jobs)
-        details = {
-            "job_id": first_job.job_id,
-            "job_type": first_job.job_type,
-            "statement_type": first_job.statement_type,
-            "created_at": first_job.created_at,
-            "user_email": first_job.user_email,
-            "state": first_job.state,
-            "query": first_job.query,
-            "reference_tables": first_job.reference_tables,
-            "location": first_job.location,
-        }
-        return DataFrame([details])
 
     @classmethod
     def _process_schema_field(
@@ -251,3 +221,131 @@ class Toolbox:
         # reorder columns
         ordering = ["column", "field_path", "description", "data_type"]
         return column_descriptions[ordering]
+
+    def execute_query(self, query: str) -> DataFrame:
+        """
+        Execute a query and return the results
+
+        Inputs:
+            query - query to execute
+
+        Outputs:
+            table - data returned via the query
+
+        """
+        query_job_config = QueryJobConfig(
+            labels={"project": "bigquery-mcp", "caller": "ai-agent"},
+        )
+        table = self.client.query(query, job_config=query_job_config).to_dataframe()
+        return table
+
+    def get_jobs(self) -> DataFrame:
+        """Return jobs"""
+        jobs = self.client.list_jobs(all_users=True)  # lots of search params available
+        first_job = next(jobs)
+        details = {
+            "job_id": first_job.job_id,
+            "job_type": first_job.job_type,
+            "statement_type": first_job.statement_type,
+            "created_at": first_job.created_at,
+            "user_email": first_job.user_email,
+            "state": first_job.state,
+            "query": first_job.query,
+            "reference_tables": first_job.reference_tables,
+            "location": first_job.location,
+        }
+        return DataFrame([details])
+
+
+class Formatter:
+    """
+    A collection of methods for formatting data
+    in a manner readable by humans or LLMs
+
+    """
+
+    @staticmethod
+    def join_entries(column: Series, header: str) -> str:
+        """
+        Join a column of strings into a single string, separated by clear delimiters
+
+        Inputs:
+            column - a column of strings to join
+            header - a header to add to the joined column
+
+        Outputs:
+            joined_column - a single string of joined entries
+
+        """
+        delimiter = "====="
+        return "\n".join([header, delimiter, "\n=====\n".join(column), delimiter])
+
+    @staticmethod
+    def format_dataset(row: Series) -> str:
+        """
+        Format a result row (representing a dataset) for human consumption
+
+        Inputs:
+            row - a row from a DataFrame representing a dataset
+
+        Outputs:
+            formatted_row - a formatted string representing the dataset
+
+        """
+        formatted_row = "\n".join(
+            [
+                f"Name: {row.dataset}",
+                f"Created: {row.created_at}",
+                f"Last modified: {row.last_modified}",
+                "-----",
+                f"Description: {row.description}",
+            ]
+        )
+        return formatted_row
+
+    @staticmethod
+    def format_relation(row: Series) -> str:
+        """
+        Format a result row (representing a relation) for human consumption
+
+        Inputs:
+            row - a row from a DataFrame representing a relation
+
+        Outputs:
+            formatted_row - a formatted string representing the relation
+
+        """
+        formatted_row = "\n".join(
+            [
+                f"Name: {row.relation}",
+                f"Type: {row.relation_type}",
+                f"Created: {row.created_at}",
+                f"Last modified: {row.last_modified}",
+                "-----",
+                f"Description: {row.description}",
+            ]
+        )
+        return formatted_row
+
+    @staticmethod
+    def format_column(row: Series) -> str:
+        """
+        Format a result row (representing a column) for human consumption
+
+        Inputs:
+            row - a row from a DataFrame representing a column
+
+        Outputs:
+            formatted_row - a formatted string representing the column
+
+        """
+        formatted_row = "\n".join(
+            [
+                f"Name: {row.column}",
+                f"Field path: {row.field_path}",
+                f"Data type: {row.data_type}",
+                "-----",
+                f"Description: {row.description}",
+            ]
+        )
+        return formatted_row
