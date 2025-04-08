@@ -3,20 +3,40 @@
 
 from mcp.server.fastmcp import FastMCP
 
-from src.utils import Formatter, Toolbox
+from src.formatter import Formatter
+from src.toolbox import Toolbox
 
-# Create a named server
+# create a named server
 server = FastMCP("bigquery", log_level="WARNING")
 
-toolbox = Toolbox(region="europe-west2")
+# prepare tools
+GCP_REGION = "europe-west2"
+toolbox = Toolbox(region=GCP_REGION)
 
 
 @server.tool()
 def get_datasets() -> str:
-    """Get all datasets with descriptions"""
-    datasets = toolbox.get_dataset_descriptions()
-    entries = datasets.apply(Formatter.format_dataset, axis="columns")
-    result = Formatter.join_entries(entries, "All datasets having descriptions")
+    """Get all available dataset IDs"""
+    datasets = toolbox.get_dataset_ids()
+    result = datasets.to_string()
+    return result
+
+
+@server.tool()
+def get_all_dataset_descriptions() -> str:
+    """Get all datasets having descriptions in the target region"""
+    dataset_descriptions = toolbox.get_all_dataset_descriptions()
+    entries = dataset_descriptions.apply(Formatter.format_dataset, axis="columns")
+    header = f"All datasets having descriptions in {GCP_REGION}"
+    result = Formatter.join_entries(entries, header=header)
+    return result
+
+
+@server.tool()
+def get_dataset_description(dataset_id: str) -> str:
+    """Get a dataset with its description and other details"""
+    dataset = toolbox.get_dataset_details(dataset_id)
+    result = Formatter.format_dataset_object(dataset)
     return result
 
 
@@ -25,7 +45,7 @@ def get_tables(dataset: str) -> str:
     """Get all tables in a dataset"""
     tables = toolbox.get_relation_descriptions(dataset)
     entries = tables.apply(Formatter.format_relation, axis="columns")
-    result = Formatter.join_entries(entries, f"All tables in dataset {dataset}")
+    result = Formatter.join_entries(entries, header=f"All tables in dataset {dataset}")
     return result
 
 
@@ -35,7 +55,7 @@ def get_columns(dataset: str, table: str) -> str:
     columns = toolbox.get_column_descriptions(dataset, table)
     entries = columns.apply(Formatter.format_column, axis="columns")
     result = Formatter.join_entries(
-        entries, f"All columns in table {table} of dataset {dataset}"
+        entries, header=f"All columns in table {table} of dataset {dataset}"
     )
     return result
 

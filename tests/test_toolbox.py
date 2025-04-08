@@ -1,4 +1,4 @@
-"""Tests for the utils module"""
+"""Tests for the Query and Toolbox classes"""
 
 import re
 
@@ -7,7 +7,7 @@ import pytest
 from google.cloud.bigquery import Client, QueryJobConfig, SchemaField
 from pandas import DataFrame
 
-from src.utils import InvalidRegionError, Query, Toolbox
+from src.toolbox import InvalidRegionError, Query, Toolbox
 
 
 class TestQuery:
@@ -69,7 +69,7 @@ class TestToolbox:
         mock_client.query.return_value.to_dataframe.return_value = mock_df
 
         # Create toolbox with mocked client
-        mocker.patch("src.utils.Client", return_value=mock_client)
+        mocker.patch("src.toolbox.Client", return_value=mock_client)
 
         # Execute test
         toolbox = Toolbox(region="europe-west2")
@@ -93,38 +93,89 @@ class TestToolbox:
         assert result.iloc[0]["column1"] == "value1"
         assert result.iloc[0]["column2"] == "value2"
 
-    def test_get_dataset_descriptions(self, mocker):
-        """Test that Toolbox.get_dataset_descriptions works correctly"""
+    def test_get_all_dataset_descriptions(self, mocker):
+        """Test that Toolbox.get_all_dataset_descriptions works correctly"""
         # Mock setup
-        mock_dataset = mocker.Mock()
-        mock_dataset.dataset_id = "test"
-        mock_dataset.description = "test desc"
-        mock_dataset.location = "europe-west2"
-        mock_dataset.created = mocker.Mock()
-        mock_dataset.created.isoformat.return_value = "2024-03-20T10:00:00"
-        mock_dataset.modified = mocker.Mock()
-        mock_dataset.modified.isoformat.return_value = "2024-03-21T11:00:00"
+        mock_df = DataFrame(
+            {"dataset": ["test_dataset"], "description": ["test description"]}
+        )
 
         mock_client = mocker.Mock()
-        mock_client.list_datasets.return_value = [mock_dataset]
-        mock_client.get_dataset.return_value = mock_dataset
+        mock_client.query.return_value.to_dataframe.return_value = mock_df
 
         # Create toolbox with mocked client
-        mocker.patch("src.utils.Client", return_value=mock_client)
+        mocker.patch("src.toolbox.Client", return_value=mock_client)
 
+        # Mock the Query class
+        mock_query = mocker.Mock()
+        mock_query.format.return_value = "SELECT * FROM test"
+        mocker.patch("src.toolbox.Query", return_value=mock_query)
+
+        # Execute test
         toolbox = Toolbox(region="europe-west2")
-        result = toolbox.get_dataset_descriptions()
+        result = toolbox.get_all_dataset_descriptions()
+
+        # Verify results
+        mock_query.format.assert_called_once_with(region="europe-west2")
+        mock_client.query.assert_called_once()
+
+        # Check DataFrame contents
+        assert len(result) == 1
+        assert result.iloc[0]["dataset"] == "test_dataset"
+        assert result.iloc[0]["description"] == "test description"
+
+    def test_get_dataset_ids(self, mocker):
+        """Test that Toolbox.get_dataset_ids works correctly"""
+        # Mock setup
+        mock_dataset1 = mocker.Mock()
+        mock_dataset1.dataset_id = "dataset1"
+        mock_dataset2 = mocker.Mock()
+        mock_dataset2.dataset_id = "dataset2"
+
+        mock_client = mocker.Mock()
+        mock_client.list_datasets.return_value = [mock_dataset1, mock_dataset2]
+
+        # Create toolbox with mocked client
+        mocker.patch("src.toolbox.Client", return_value=mock_client)
+
+        # Execute test
+        toolbox = Toolbox(region="europe-west2")
+        result = toolbox.get_dataset_ids()
 
         # Verify results
         mock_client.list_datasets.assert_called_once()
 
-        # Check DataFrame contents
-        assert len(result) == 1
-        assert result.iloc[0]["dataset"] == "test"
-        assert result.iloc[0]["description"] == "test desc"
-        assert result.iloc[0]["region"] == "europe-west2"
-        assert result.iloc[0]["created_at"] == "2024-03-20T10:00:00"
-        assert result.iloc[0]["last_modified"] == "2024-03-21T11:00:00"
+        # Check Series contents
+        assert len(result) == 2
+        assert result.tolist() == ["dataset1", "dataset2"]
+        assert result.name == "dataset_id"
+
+    def test_get_dataset_details(self, mocker):
+        """Test that Toolbox.get_dataset_details works correctly"""
+        # Mock setup
+        mock_dataset = mocker.Mock()
+        mock_dataset.dataset_id = "test_dataset"
+        mock_dataset.description = "test description"
+        mock_dataset.location = "europe-west2"
+        mock_dataset.created = mocker.Mock()
+        mock_dataset.modified = mocker.Mock()
+
+        mock_client = mocker.Mock()
+        mock_client.get_dataset.return_value = mock_dataset
+
+        # Create toolbox with mocked client
+        mocker.patch("src.toolbox.Client", return_value=mock_client)
+
+        # Execute test
+        toolbox = Toolbox(region="europe-west2")
+        result = toolbox.get_dataset_details("test_dataset")
+
+        # Verify results
+        mock_client.get_dataset.assert_called_once_with("test_dataset")
+        assert result == mock_dataset
+        assert result.dataset_id == "test_dataset"
+        assert result.description == "test description"
+        assert result.location == "europe-west2"
 
     def test_get_relation_descriptions(self, mocker):
         """Test that Toolbox.get_relation_descriptions works correctly"""
@@ -143,7 +194,7 @@ class TestToolbox:
         mock_client.get_table.return_value = mock_relation
 
         # Create toolbox with mocked client
-        mocker.patch("src.utils.Client", return_value=mock_client)
+        mocker.patch("src.toolbox.Client", return_value=mock_client)
 
         toolbox = Toolbox(region="europe-west2")
         result = toolbox.get_relation_descriptions("test_dataset")
@@ -209,24 +260,17 @@ class TestToolbox:
 
         # Verify results
         assert len(result) == 3
+        assert result[0]["field_path"] == "grandparent"
+        assert result[0]["description"] == "A grandparent field"
+        assert result[0]["data_type"] == "RECORD"
 
-        # Check each level exists with correct naming
-        field_paths = [r["field_path"] for r in result]
-        assert "grandparent" in field_paths
-        assert "grandparent.parent" in field_paths
-        assert "grandparent.parent.child" in field_paths
+        assert result[1]["field_path"] == "grandparent.parent"
+        assert result[1]["description"] == "A parent field"
+        assert result[1]["data_type"] == "RECORD"
 
-        # Check descriptions are preserved
-        descriptions = {r["field_path"]: r["description"] for r in result}
-        assert descriptions["grandparent"] == "A grandparent field"
-        assert descriptions["grandparent.parent"] == "A parent field"
-        assert descriptions["grandparent.parent.child"] == "A child field"
-
-        # Check types are preserved
-        types = {r["field_path"]: r["data_type"] for r in result}
-        assert types["grandparent"] == "RECORD"
-        assert types["grandparent.parent"] == "RECORD"
-        assert types["grandparent.parent.child"] == "STRING"
+        assert result[2]["field_path"] == "grandparent.parent.child"
+        assert result[2]["description"] == "A child field"
+        assert result[2]["data_type"] == "STRING"
 
     def test_get_column_descriptions_with_nesting(self, mocker):
         """Test that get_column_descriptions handles nested fields correctly"""
@@ -247,29 +291,26 @@ class TestToolbox:
         mock_client.get_table.return_value = mock_table
 
         # Create toolbox with mocked client
-        mocker.patch("src.utils.Client", return_value=mock_client)
-        toolbox = Toolbox(region="europe-west2")
+        mocker.patch("src.toolbox.Client", return_value=mock_client)
 
-        # Get column descriptions
-        result = toolbox.get_column_descriptions("dataset", "table")
+        # Execute test
+        toolbox = Toolbox(region="europe-west2")
+        result = toolbox.get_column_descriptions("test_dataset", "test_table")
 
         # Verify results
-        assert len(result) == 3  # Should have 3 fields with descriptions
+        mock_client.get_dataset.assert_called_once_with("test_dataset")
+        mock_client.get_table.assert_called_once_with("table_ref")
 
-        # Convert to dict for easier testing
-        result_dict = {row["field_path"]: row for _, row in result.iterrows()}
+        # Check DataFrame contents
+        assert len(result) == 3
+        assert result.iloc[0]["field_path"] == "top"
+        assert result.iloc[0]["description"] == "Top description"
+        assert result.iloc[0]["data_type"] == "STRING"
 
-        # Check top level field
-        assert "top" in result_dict
-        assert result_dict["top"]["description"] == "Top description"
-        assert result_dict["top"]["data_type"] == "STRING"
+        assert result.iloc[1]["field_path"] == "parent"
+        assert result.iloc[1]["description"] == "Parent description"
+        assert result.iloc[1]["data_type"] == "RECORD"
 
-        # Check parent field
-        assert "parent" in result_dict
-        assert result_dict["parent"]["description"] == "Parent description"
-        assert result_dict["parent"]["data_type"] == "RECORD"
-
-        # Check child field
-        assert "parent.child" in result_dict
-        assert result_dict["parent.child"]["description"] == "Child description"
-        assert result_dict["parent.child"]["data_type"] == "STRING"
+        assert result.iloc[2]["field_path"] == "parent.child"
+        assert result.iloc[2]["description"] == "Child description"
+        assert result.iloc[2]["data_type"] == "STRING"
