@@ -61,8 +61,8 @@ class TestToolbox:
             with pytest.raises(InvalidRegionError, match=pattern):
                 Toolbox(region=attempt)
 
-    def test_execute_query(self, mocker):
-        """Test that Toolbox.execute_query works correctly"""
+    def test_execute_query_without_parameters(self, mocker):
+        """Test that Toolbox.execute_query works correctly without parameters"""
         # Mock setup
         mock_client = mocker.Mock()
         mock_df = DataFrame({"column1": ["value1"], "column2": ["value2"]})
@@ -87,6 +87,40 @@ class TestToolbox:
             "project": "bigquery-mcp",
             "caller": "ai-agent",
         }
+        assert call_args[1]["job_config"].query_parameters == []
+
+        # Check DataFrame contents
+        assert len(result) == 1
+        assert result.iloc[0]["column1"] == "value1"
+        assert result.iloc[0]["column2"] == "value2"
+
+    def test_execute_query_with_parameters(self, mocker):
+        """Test that Toolbox.execute_query works correctly with parameters"""
+        # Mock setup
+        mock_client = mocker.Mock()
+        mock_df = DataFrame({"column1": ["value1"], "column2": ["value2"]})
+        mock_client.query.return_value.to_dataframe.return_value = mock_df
+
+        # Create toolbox with mocked client
+        mocker.patch("src.toolbox.Client", return_value=mock_client)
+
+        # Execute test
+        toolbox = Toolbox(region="europe-west2")
+        test_query = "SELECT * FROM test_table WHERE id = @id"
+        result = toolbox.execute_query(test_query, id="123")
+
+        # Verify results
+        mock_client.query.assert_called_once()
+
+        # Check that the query was called with correct config and parameters
+        call_args = mock_client.query.call_args
+        assert call_args[0][0] == test_query
+        assert isinstance(call_args[1]["job_config"], QueryJobConfig)
+        assert len(call_args[1]["job_config"].query_parameters) == 1
+        param = call_args[1]["job_config"].query_parameters[0]
+        assert param.name == "id"
+        assert param.value == "123"
+        assert param.type_ == "STRING"
 
         # Check DataFrame contents
         assert len(result) == 1
@@ -314,3 +348,49 @@ class TestToolbox:
         assert result.iloc[2]["field_path"] == "parent.child"
         assert result.iloc[2]["description"] == "Child description"
         assert result.iloc[2]["data_type"] == "STRING"
+
+    def test_get_query_history(self, mocker):
+        """Test that Toolbox.get_query_history works correctly"""
+        # Mock setup
+        mock_df = DataFrame(
+            {
+                "job_id": ["job1"],
+                "creation_time": ["2024-03-21T12:00:00"],
+                "query": ["SELECT * FROM test_table"],
+            }
+        )
+
+        mock_client = mocker.Mock()
+        mock_client.query.return_value.to_dataframe.return_value = mock_df
+
+        # Create toolbox with mocked client
+        mocker.patch("src.toolbox.Client", return_value=mock_client)
+
+        # Mock the Query class
+        mock_query = mocker.Mock()
+        mock_query.format.return_value = "SELECT * FROM INFORMATION_SCHEMA.JOBS"
+        mocker.patch("src.toolbox.Query", return_value=mock_query)
+
+        # Execute test
+        toolbox = Toolbox(region="europe-west2")
+        result = toolbox.get_query_history("test_dataset", "test_table")
+
+        # Verify Query was initialized and formatted correctly
+        mock_query.format.assert_called_once_with(region="europe-west2")
+
+        # Verify query was executed with correct parameters
+        mock_client.query.assert_called_once()
+        call_args = mock_client.query.call_args
+        assert call_args[0][0] == "SELECT * FROM INFORMATION_SCHEMA.JOBS"
+        assert isinstance(call_args[1]["job_config"], QueryJobConfig)
+        assert len(call_args[1]["job_config"].query_parameters) == 2
+
+        params = {p.name: p.value for p in call_args[1]["job_config"].query_parameters}
+        assert params["dataset_id"] == "test_dataset"
+        assert params["relation_id"] == "test_table"
+
+        # Check DataFrame contents
+        assert len(result) == 1
+        assert result.iloc[0]["job_id"] == "job1"
+        assert result.iloc[0]["creation_time"] == "2024-03-21T12:00:00"
+        assert result.iloc[0]["query"] == "SELECT * FROM test_table"

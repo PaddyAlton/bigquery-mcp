@@ -60,6 +60,16 @@ def get_columns(dataset: str, table: str) -> str:
     return result
 
 
+@server.tool()
+def get_query_history(dataset: str, table: str) -> str:
+    """Get the recent query history for a table"""
+    query_history = toolbox.get_query_history(dataset, table)
+    entries = query_history.apply(Formatter.format_query_history, axis="columns")
+    header = f"Query history for table {table} in dataset {dataset}"
+    result = Formatter.join_entries(entries, header=header)
+    return result
+
+
 ### SOME IDEAS
 # Materialised view over the information schema;
 #   can we add search/vector indexes to this? If so maybe worth it!

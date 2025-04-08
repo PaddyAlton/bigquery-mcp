@@ -127,3 +127,26 @@ class Formatter:
             ]
         )
         return formatted_row
+
+    @staticmethod
+    def format_query_history(row: Series) -> str:
+        """
+        Format a result row (representing a query history entry)
+        for human consumption
+
+        Inputs:
+            row - a row from a DataFrame representing a past query
+
+        Outputs:
+            formatted_row - a formatted string representing the query
+
+        """
+        formatted_row = "\n".join(
+            [
+                f"Job ID: {row.job_id}",
+                f"Created at: {row.creation_time}",
+                "-----",
+                f"Query: {row.query}",
+            ]
+        )
+        return formatted_row

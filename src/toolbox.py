@@ -2,8 +2,15 @@
 
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
-from google.cloud.bigquery import Client, Dataset, QueryJobConfig, SchemaField
+from google.cloud.bigquery import (
+    Client,
+    Dataset,
+    QueryJobConfig,
+    ScalarQueryParameter,
+    SchemaField,
+)
 from pandas import DataFrame, Series
 
 
@@ -97,20 +104,31 @@ class Toolbox:
         """The BigQuery region to access"""
         return self._region.value
 
-    def execute_query(self, query: str) -> DataFrame:
+    def execute_query(self, query: str, **params: str) -> DataFrame:
         """
         Execute a query and return the results
 
         Inputs:
             query - query to execute
 
+        Keywords:
+            **params - parameters for parameterised queries
+
         Outputs:
             table - data returned via the query
 
         """
-        query_job_config = QueryJobConfig(
-            labels={"project": "bigquery-mcp", "caller": "ai-agent"},
-        )
+        query_params = []
+        for key, value in params.items():
+            query_params.append(ScalarQueryParameter(key, "STRING", value))
+
+        config_args: dict[str, Any] = {
+            "labels": {"project": "bigquery-mcp", "caller": "ai-agent"}
+        }
+        if query_params:
+            config_args["query_parameters"] = query_params
+
+        query_job_config = QueryJobConfig(**config_args)
         table = self.client.query(query, job_config=query_job_config).to_dataframe()
         return table
 
@@ -254,19 +272,29 @@ class Toolbox:
         ordering = ["column", "field_path", "description", "data_type"]
         return column_descriptions[ordering]
 
-    def get_jobs(self) -> DataFrame:
-        """Return jobs"""
-        jobs = self.client.list_jobs(all_users=True)  # lots of search params available
-        first_job = next(jobs)
-        details = {
-            "job_id": first_job.job_id,
-            "job_type": first_job.job_type,
-            "statement_type": first_job.statement_type,
-            "created_at": first_job.created_at,
-            "user_email": first_job.user_email,
-            "state": first_job.state,
-            "query": first_job.query,
-            "reference_tables": first_job.reference_tables,
-            "location": first_job.location,
-        }
-        return DataFrame([details])
+    def get_query_history(self, dataset_id: str, relation_id: str) -> DataFrame:
+        """
+        Return a table of jobs executed in the target region
+        such that the job was a select query referencing the
+        target dataset.relation
+
+        Jobs are filtered for recency and relevancy
+        (see definition in `jobs.sql`)
+
+        Inputs:
+            dataset_id - the ID of the dataset to get jobs from
+            relation_id - the ID of the relation (table)
+
+        Outputs:
+            query_history - table of jobs
+
+            job_id | creation_time | query
+
+        """
+        query = Query("jobs").format(region=self.region)
+
+        query_history = self.execute_query(
+            query, dataset_id=dataset_id, relation_id=relation_id
+        )
+
+        return query_history
